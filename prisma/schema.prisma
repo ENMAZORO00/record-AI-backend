@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String        @id @default(cuid())
+  name        String
+  email       String        @unique
+  password    String
+  isVerified  Boolean       @default(false)
+  otp         String?
+  otpExpiry   DateTime?
+  createdAt   DateTime      @default(now())
+  Information Information[]
+  Summary     Summary[]
+  Task        Task[]
+  Transcript  Transcript[]
+  Note        Note[]
+}
+
+model Otp {
+  id        String   @id @default(cuid())
+  email     String
+  otp       String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  title     String
+  content   String   @db.Text
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model Conversation {
+  id           String     @id
+  speaker      String
+  text         String
+  transcriptId String
+  Transcript   Transcript @relation(fields: [transcriptId], references: [id])
+}
+
+model Information {
+  id        String   @id
+  text      String
+  userId    String
+  createdAt DateTime @default(now())
+  User      User     @relation(fields: [userId], references: [id])
+}
+
+model Summary {
+  id        String   @id
+  title     String
+  content   String
+  label     String
+  userId    String
+  createdAt DateTime @default(now())
+  User      User     @relation(fields: [userId], references: [id])
+}
+
+model Task {
+  id          String   @id
+  heading     String
+  description String
+  date        DateTime
+  label       String
+  completed   Boolean  @default(false)
+  userId      String
+  createdAt   DateTime @default(now())
+  User        User     @relation(fields: [userId], references: [id])
+}
+
+model Transcript {
+  id           String         @id
+  recordingUrl String?
+  userId       String
+  createdAt    DateTime       @default(now())
+  Conversation Conversation[]
+  User         User           @relation(fields: [userId], references: [id])
+}
