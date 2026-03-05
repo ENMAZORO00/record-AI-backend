@@ -47,11 +47,13 @@ model Note {
 }
 
 model Conversation {
-  id           String     @id
+  id           String     @id @default(cuid())
   speaker      String
-  text         String
+  text         String     @db.Text
   transcriptId String
-  Transcript   Transcript @relation(fields: [transcriptId], references: [id])
+  Transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@index([transcriptId])
 }
 
 model Information {
@@ -85,10 +87,14 @@ model Task {
 }
 
 model Transcript {
-  id           String         @id
+  id           String         @id @default(cuid())
   recordingUrl String?
+  status       String         @default("processing") // processing | completed | failed
   userId       String
   createdAt    DateTime       @default(now())
   Conversation Conversation[]
-  User         User           @relation(fields: [userId], references: [id])
+  User         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
 }
