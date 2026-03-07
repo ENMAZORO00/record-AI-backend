@@ -1,10 +1,11 @@
 /**
  * Whisper-compatible speech-to-text (open source, free when self-hosted).
- * Works with OpenAI-compatible Whisper APIs (e.g. faster-whisper-server, FastWhisperAPI).
+ * Works with OpenAI-compatible APIs: self-hosted, Groq, etc.
  *
- * Env: WHISPER_API_URL (e.g. http://localhost:9000 or https://your-whisper-server.com)
+ * Env: WHISPER_API_URL (e.g. http://localhost:9000 or https://api.groq.com/openai for Groq)
+ *      Optional: WHISPER_API_KEY or GROQ_API_KEY - for authenticated APIs (e.g. Groq)
  *      Optional: WHISPER_RESPONSE_FORMAT=verbose_json for segments
- *      Optional: WHISPER_MODEL=whisper-1
+ *      Optional: WHISPER_MODEL (whisper-1 for self-hosted; whisper-large-v3-turbo for Groq)
  */
 
 /**
@@ -38,8 +39,13 @@ export async function transcribeWithWhisper(audioBuffer, filename = 'audio.m4a',
   form.append('model', process.env.WHISPER_MODEL || 'whisper-1')
   form.append('response_format', responseFormat)
 
+  const apiKey = process.env.GROQ_API_KEY || process.env.WHISPER_API_KEY
+  const headers = {}
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+
   const res = await fetch(endpoint, {
     method: 'POST',
+    headers,
     body: form,
   })
 

@@ -1,6 +1,7 @@
 /**
  * Transcription provider abstraction.
- * Set TRANSCRIPTION_PROVIDER=azure | whisper | wispr (default: azure if AZURE_SPEECH_KEY set, else wispr if WISPR_API_KEY set, else whisper if WHISPER_API_URL set).
+ * Set TRANSCRIPTION_PROVIDER=azure | whisper | wispr | groq
+ * (default: azure if AZURE_SPEECH_KEY set, else wispr if WISPR_API_KEY set, else groq if GROQ_API_KEY set, else whisper).
  * Returns phrases as [{ speaker, text }] for Conversation rows.
  */
 import {
@@ -14,9 +15,11 @@ function getProvider() {
   const envProvider = (process.env.TRANSCRIPTION_PROVIDER || '').toLowerCase()
   if (envProvider === 'wispr') return 'wispr'
   if (envProvider === 'whisper') return 'whisper'
+  if (envProvider === 'groq') return 'groq'
   if (envProvider === 'azure') return 'azure'
   if (process.env.AZURE_SPEECH_KEY && process.env.AZURE_SPEECH_REGION) return 'azure'
   if (process.env.WISPR_API_KEY) return 'wispr'
+  if (process.env.GROQ_API_KEY) return 'groq'
   if (process.env.WHISPER_API_URL) return 'whisper'
   return 'azure'
 }
@@ -34,11 +37,17 @@ export async function getPhrasesFromRecording(recordingUrl, options = {}) {
   const provider = getProvider()
   const { displayName = 'recording', locale = 'en-US' } = options
 
+  // Groq uses OpenAI-compatible Whisper API; auto-set URL/model when not configured
+  if (provider === 'groq') {
+    if (!process.env.WHISPER_API_URL) process.env.WHISPER_API_URL = 'https://api.groq.com/openai'
+    if (!process.env.WHISPER_MODEL) process.env.WHISPER_MODEL = 'whisper-large-v3-turbo'
+  }
+
   if (provider === 'wispr') {
     return transcribeFromUrlWispr(recordingUrl, locale)
   }
 
-  if (provider === 'whisper') {
+  if (provider === 'whisper' || provider === 'groq') {
     return transcribeFromUrl(recordingUrl, locale)
   }
 
@@ -50,7 +59,7 @@ export async function getPhrasesFromRecording(recordingUrl, options = {}) {
     return waitForTranscriptionAndGetPhrases(selfUrl, filesUrl)
   }
 
-  throw new Error(`Unknown TRANSCRIPTION_PROVIDER: ${provider}. Use 'azure', 'whisper', or 'wispr'.`)
+  throw new Error(`Unknown TRANSCRIPTION_PROVIDER: ${provider}. Use 'azure', 'whisper', 'wispr', or 'groq'.`)
 }
 
 export { getProvider }

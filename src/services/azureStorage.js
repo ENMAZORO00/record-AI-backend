@@ -59,7 +59,7 @@ function getSharedKeyCredential() {
 export async function ensureContainer() {
   const client = getBlobServiceClient()
   const container = client.getContainerClient(containerName)
-  await container.createIfNotExists({ access: 'private' })
+  await container.createIfNotExists()
   return container
 }
 
@@ -73,7 +73,7 @@ export async function ensureContainer() {
 export async function uploadRecording(buffer, blobName, contentType = 'audio/mpeg') {
   const client = getBlobServiceClient()
   const container = client.getContainerClient(containerName)
-  await container.createIfNotExists({ access: 'private' })
+  await container.createIfNotExists()
 
   const blockBlob = container.getBlockBlobClient(blobName)
   await blockBlob.uploadData(buffer, {

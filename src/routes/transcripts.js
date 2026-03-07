@@ -11,7 +11,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_MB * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowed = ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/x-wav', 'audio/webm', 'audio/mp3', 'audio/x-m4a']
+    const allowed = ['audio/mpeg', 'audio/mp4', 'audio/m4a', 'audio/wav', 'audio/x-wav', 'audio/webm', 'audio/mp3', 'audio/x-m4a']
     if (allowed.includes(file.mimetype) || file.mimetype?.startsWith('audio/')) {
       cb(null, true)
     } else {
