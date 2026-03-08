@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import multer from 'multer'
 import { prisma } from '../config/prisma.js'
-import { uploadRecording } from '../services/azureStorage.js'
+import { uploadRecording, deleteRecording } from '../services/azureStorage.js'
 import { runTranscriptionJob } from '../services/transcriptionJob.js'
 import { rankTranscriptsByRelevance } from '../services/groqSemanticSearch.js'
 
@@ -144,13 +144,18 @@ router.get('/:id', async (req, res, next) => {
 
 /**
  * DELETE /transcripts/:id
+ * Deletes transcript from Postgres and audio blob from Azure.
  */
 router.delete('/:id', async (req, res, next) => {
   try {
-    const { count } = await prisma.transcript.deleteMany({
+    const t = await prisma.transcript.findFirst({
       where: { id: req.params.id, userId: req.user.id },
     })
-    if (count === 0) return res.status(404).json({ error: 'Transcript not found' })
+    if (!t) return res.status(404).json({ error: 'Transcript not found' })
+    if (t.recordingUrl) {
+      await deleteRecording(t.recordingUrl)
+    }
+    await prisma.transcript.delete({ where: { id: t.id } })
     res.status(204).send()
   } catch (err) {
     next(err)

@@ -98,3 +98,26 @@ export async function uploadRecording(buffer, blobName, contentType = 'audio/mpe
   }
   return { url, blobName }
 }
+
+/**
+ * Delete a recording blob from Azure Storage.
+ * @param {string} recordingUrl - Full blob URL (with or without SAS)
+ * @returns {Promise<void>}
+ */
+export async function deleteRecording(recordingUrl) {
+  if (!recordingUrl || typeof recordingUrl !== 'string') return
+  try {
+    const url = new URL(recordingUrl)
+    const pathParts = url.pathname.split('/').filter(Boolean)
+    // pathname is like /containerName/userId/timestamp.ext
+    if (pathParts.length < 2) return
+    const blobName = pathParts.slice(1).join('/')
+    const client = getBlobServiceClient()
+    const container = client.getContainerClient(containerName)
+    const blockBlob = container.getBlockBlobClient(blobName)
+    await blockBlob.deleteIfExists()
+  } catch (err) {
+    console.warn('Azure delete blob warning:', err?.message)
+    // Don't throw - allow Postgres delete to proceed even if blob delete fails
+  }
+}
