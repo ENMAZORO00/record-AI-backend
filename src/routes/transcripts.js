@@ -3,6 +3,7 @@ import multer from 'multer'
 import { prisma } from '../config/prisma.js'
 import { uploadRecording } from '../services/azureStorage.js'
 import { runTranscriptionJob } from '../services/transcriptionJob.js'
+import { rankTranscriptsByRelevance } from '../services/groqSemanticSearch.js'
 
 const router = Router()
 
@@ -90,6 +91,33 @@ router.get('/', async (req, res, next) => {
       },
     })
     res.json(list)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /transcripts/search
+ * Semantic search over user's transcripts using Groq chat API (LLM ranking).
+ * Body: { query: string }
+ */
+router.post('/search', async (req, res, next) => {
+  try {
+    const query = (req.body?.query ?? '').toString().trim()
+    const list = await prisma.transcript.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        Conversation: { orderBy: { id: 'asc' } },
+      },
+    })
+
+    if (query === '' || list.length === 0) {
+      return res.json(list)
+    }
+
+    const ranked = await rankTranscriptsByRelevance(query, list)
+    res.json(ranked)
   } catch (err) {
     next(err)
   }
