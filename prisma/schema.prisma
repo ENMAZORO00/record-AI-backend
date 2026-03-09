@@ -82,11 +82,13 @@ model Conversation {
 }
 
 model Information {
-  id        String   @id
-  text      String
+  id        String   @id @default(cuid())
+  text      String   @db.Text
   userId    String
   createdAt DateTime @default(now())
-  User      User     @relation(fields: [userId], references: [id])
+  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Summary {
