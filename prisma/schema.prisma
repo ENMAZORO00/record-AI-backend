@@ -21,6 +21,31 @@ model User {
   Task        Task[]
   Transcript  Transcript[]
   Note        Note[]
+  Chat        Chat[]
+}
+
+model Chat {
+  id        String        @id @default(cuid())
+  title     String
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  ChatMessage[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([updatedAt])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  role      String   // 'user' | 'assistant'
+  content   String   @db.Text
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([chatId])
 }
 
 model Otp {
