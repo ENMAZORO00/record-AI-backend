@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "node --env-file=.env --watch src/index.js",
     "start": "node src/index.js",
+    "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev"
@@ -17,9 +18,7 @@
     "express": "^4.21.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.0",
-    "nodemailer": "^8.0.1"
-  },
-  "devDependencies": {
+    "nodemailer": "^8.0.1",
     "prisma": "^6.1.0"
   }
 }
