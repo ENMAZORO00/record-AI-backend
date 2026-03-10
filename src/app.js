@@ -12,6 +12,11 @@ import { authMiddleware } from './middleware/auth.js'
 const app = express()
 app.use(cors())
 app.use(express.json())
+
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: 'Server is running' })
+})
+
 app.use('/auth', authRouter)
 app.use('/notes', authMiddleware, notesRouter)
 app.use('/transcripts', authMiddleware, transcriptsRouter)
