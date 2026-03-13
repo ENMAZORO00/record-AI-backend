@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { prisma } from '../config/prisma.js'
+import { getTranscriptsForUser } from '../services/transcriptAccess.js'
 import { generateAssistantReply } from '../services/assistantChat.js'
 
 const router = Router()
@@ -117,13 +118,8 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Message content is required' })
     }
 
-    const transcripts = await prisma.transcript.findMany({
-      where: { userId, status: 'completed' },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        Conversation: { orderBy: { id: 'asc' } },
-      },
-    })
+    const allTranscripts = await getTranscriptsForUser(userId)
+    const transcripts = allTranscripts.filter((t) => t.status === 'completed')
 
     const assistantContent = await generateAssistantReply(content, [], transcripts)
 
@@ -196,13 +192,8 @@ router.post('/:id/messages', async (req, res, next) => {
       return res.status(404).json({ error: 'Chat not found' })
     }
 
-    const transcripts = await prisma.transcript.findMany({
-      where: { userId, status: 'completed' },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        Conversation: { orderBy: { id: 'asc' } },
-      },
-    })
+    const allTranscripts = await getTranscriptsForUser(userId)
+    const transcripts = allTranscripts.filter((t) => t.status === 'completed')
 
     const chatHistory = chat.messages.map((m) => ({
       role: m.role,

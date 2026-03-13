@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { prisma } from '../config/prisma.js'
+import { getTranscriptsForUser } from '../services/transcriptAccess.js'
 import { generateAssistantReply } from '../services/assistantChat.js'
 
 const router = Router()
@@ -22,13 +22,8 @@ router.post('/chat', async (req, res, next) => {
       })
     }
 
-    const transcripts = await prisma.transcript.findMany({
-      where: { userId: req.user.id, status: 'completed' },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        Conversation: { orderBy: { id: 'asc' } },
-      },
-    })
+    const allTranscripts = await getTranscriptsForUser(req.user.id)
+    const transcripts = allTranscripts.filter((t) => t.status === 'completed')
 
     const chatHistory = messages
       .filter((m) => m.role && (m.content ?? '').toString().trim())

@@ -8,21 +8,22 @@ datasource db {
 }
 
 model User {
-  id          String        @id @default(cuid())
-  name        String
-  email       String        @unique
-  password    String?       // null for Google-only users
-  googleId    String?       @unique // Google OAuth sub
-  isVerified  Boolean       @default(false)
-  otp         String?
-  otpExpiry   DateTime?
-  createdAt   DateTime      @default(now())
-  Information Information[]
-  Summary     Summary[]
-  Task        Task[]
-  Transcript  Transcript[]
-  Note        Note[]
-  Chat        Chat[]
+  id                 String           @id @default(cuid())
+  name               String
+  email              String           @unique
+  password           String?          // null for Google-only users
+  googleId           String?          @unique // Google OAuth sub
+  isVerified         Boolean          @default(false)
+  otp                String?
+  otpExpiry          DateTime?
+  createdAt          DateTime         @default(now())
+  Information        Information[]
+  Summary            Summary[]
+  Task               Task[]
+  Transcript         Transcript[]
+  Note               Note[]
+  Chat               Chat[]
+  TranscriptShares   TranscriptShare[] @relation("SharedWithMe")
 }
 
 model Chat {
@@ -115,14 +116,28 @@ model Task {
 }
 
 model Transcript {
-  id           String         @id @default(cuid())
+  id           String           @id @default(cuid())
   recordingUrl String?
-  status       String         @default("processing") // processing | completed | failed
+  status       String           @default("processing") // processing | completed | failed
   userId       String
-  createdAt    DateTime       @default(now())
+  createdAt    DateTime         @default(now())
   Conversation Conversation[]
-  User         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  User         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  Shares       TranscriptShare[]
 
   @@index([userId])
   @@index([createdAt])
+}
+
+model TranscriptShare {
+  id           String     @id @default(cuid())
+  transcriptId String
+  sharedWithId String
+  createdAt    DateTime   @default(now())
+  transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  sharedWith   User       @relation("SharedWithMe", fields: [sharedWithId], references: [id], onDelete: Cascade)
+
+  @@unique([transcriptId, sharedWithId])
+  @@index([sharedWithId])
+  @@index([transcriptId])
 }

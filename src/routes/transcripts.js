@@ -4,8 +4,11 @@ import { prisma } from '../config/prisma.js'
 import { uploadRecording, deleteRecording } from '../services/azureStorage.js'
 import { runTranscriptionJob } from '../services/transcriptionJob.js'
 import { rankTranscriptsByRelevance } from '../services/groqSemanticSearch.js'
+import { getTranscriptsForUser, getTranscriptForUser } from '../services/transcriptAccess.js'
+import { sendTranscriptShareEmail } from '../services/email.js'
 
 const router = Router()
+const MAX_SHARES_PER_TRANSCRIPT = 3
 
 const MAX_FILE_MB = 100
 const upload = multer({
@@ -79,17 +82,11 @@ router.post('/upload', upload.single('recording'), handleUploadError, async (req
 
 /**
  * GET /transcripts
- * List current user's transcripts (newest first).
+ * List current user's transcripts (owned + shared), newest first.
  */
 router.get('/', async (req, res, next) => {
   try {
-    const list = await prisma.transcript.findMany({
-      where: { userId: req.user.id },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        Conversation: { orderBy: { id: 'asc' } },
-      },
-    })
+    const list = await getTranscriptsForUser(req.user.id)
     res.json(list)
   } catch (err) {
     next(err)
@@ -98,19 +95,13 @@ router.get('/', async (req, res, next) => {
 
 /**
  * POST /transcripts/search
- * Semantic search over user's transcripts using Groq chat API (LLM ranking).
+ * Semantic search over user's transcripts (owned + shared) using Groq chat API.
  * Body: { query: string }
  */
 router.post('/search', async (req, res, next) => {
   try {
     const query = (req.body?.query ?? '').toString().trim()
-    const list = await prisma.transcript.findMany({
-      where: { userId: req.user.id },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        Conversation: { orderBy: { id: 'asc' } },
-      },
-    })
+    const list = await getTranscriptsForUser(req.user.id)
 
     if (query === '' || list.length === 0) {
       return res.json(list)
@@ -124,19 +115,136 @@ router.post('/search', async (req, res, next) => {
 })
 
 /**
- * GET /transcripts/:id
- * Single transcript with conversations.
+ * GET /transcripts/:id/shares
+ * List emails this transcript is shared with (owner only).
  */
-router.get('/:id', async (req, res, next) => {
+router.get('/:id/shares', async (req, res, next) => {
   try {
     const t = await prisma.transcript.findFirst({
       where: { id: req.params.id, userId: req.user.id },
-      include: {
-        Conversation: { orderBy: { id: 'asc' } },
-      },
     })
     if (!t) return res.status(404).json({ error: 'Transcript not found' })
-    res.json(t)
+
+    const shares = await prisma.transcriptShare.findMany({
+      where: { transcriptId: req.params.id },
+      include: { sharedWith: { select: { email: true, name: true } } },
+    })
+    res.json(shares.map((s) => ({ email: s.sharedWith.email, name: s.sharedWith.name })))
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /transcripts/:id/share
+ * Share transcript with a user by email (owner only). Max 3 people.
+ * Body: { email: string }
+ */
+router.post('/:id/share', async (req, res, next) => {
+  try {
+    const transcriptId = req.params.id
+    const emailRaw = (req.body?.email ?? '').toString().trim().toLowerCase()
+    if (!emailRaw) {
+      return res.status(400).json({ error: 'Email is required' })
+    }
+
+    const t = await prisma.transcript.findFirst({
+      where: { id: transcriptId, userId: req.user.id },
+    })
+    if (!t) return res.status(404).json({ error: 'Transcript not found' })
+
+    if (req.user.email.toLowerCase() === emailRaw) {
+      return res.status(400).json({ error: 'Cannot share with yourself' })
+    }
+
+    const recipient = await prisma.user.findUnique({
+      where: { email: emailRaw },
+    })
+    if (!recipient) {
+      return res.status(404).json({ error: 'No user found with that email' })
+    }
+
+    const existingCount = await prisma.transcriptShare.count({
+      where: { transcriptId },
+    })
+    if (existingCount >= MAX_SHARES_PER_TRANSCRIPT) {
+      return res.status(400).json({
+        error: `Maximum ${MAX_SHARES_PER_TRANSCRIPT} people can be shared with per transcript`,
+      })
+    }
+
+    const existing = await prisma.transcriptShare.findUnique({
+      where: {
+        transcriptId_sharedWithId: { transcriptId, sharedWithId: recipient.id },
+      },
+    })
+    if (existing) {
+      return res.status(400).json({ error: 'Already shared with this user' })
+    }
+
+    await prisma.transcriptShare.create({
+      data: { transcriptId, sharedWithId: recipient.id },
+    })
+
+    setImmediate(() => {
+      sendTranscriptShareEmail(recipient.email, req.user.name, req.user.email).catch((err) => {
+        console.error('Failed to send share notification email:', err)
+      })
+    })
+
+    res.status(201).json({ success: true, email: recipient.email })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * DELETE /transcripts/:id/share
+ * Unshare transcript from a user (owner only).
+ * Query: ?email=user@example.com
+ */
+router.delete('/:id/share', async (req, res, next) => {
+  try {
+    const transcriptId = req.params.id
+    const emailRaw = (req.query?.email ?? '').toString().trim().toLowerCase()
+    if (!emailRaw) {
+      return res.status(400).json({ error: 'Email query parameter is required' })
+    }
+
+    const t = await prisma.transcript.findFirst({
+      where: { id: transcriptId, userId: req.user.id },
+    })
+    if (!t) return res.status(404).json({ error: 'Transcript not found' })
+
+    const recipient = await prisma.user.findUnique({
+      where: { email: emailRaw },
+    })
+    if (!recipient) {
+      return res.status(404).json({ error: 'No user found with that email' })
+    }
+
+    await prisma.transcriptShare.deleteMany({
+      where: {
+        transcriptId,
+        sharedWithId: recipient.id,
+      },
+    })
+
+    res.status(204).send()
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /transcripts/:id
+ * Single transcript (owner or shared user). Includes isOwner flag.
+ */
+router.get('/:id', async (req, res, next) => {
+  try {
+    const result = await getTranscriptForUser(req.params.id, req.user.id)
+    if (!result) return res.status(404).json({ error: 'Transcript not found' })
+    res.json({ ...result.transcript, isOwner: result.isOwner })
   } catch (err) {
     next(err)
   }
@@ -144,7 +252,7 @@ router.get('/:id', async (req, res, next) => {
 
 /**
  * DELETE /transcripts/:id
- * Deletes transcript from Postgres and audio blob from Azure.
+ * Deletes transcript (owner only). Removes from Postgres and Azure blob.
  */
 router.delete('/:id', async (req, res, next) => {
   try {
