@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { OAuth2Client } from 'google-auth-library'
 import { prisma } from '../config/prisma.js'
+import { authMiddleware } from '../middleware/auth.js'
 import { sendOtpEmail, sendPasswordResetOtpEmail } from '../services/email.js'
 
 const router = Router()
@@ -176,6 +177,15 @@ router.post('/login', async (req, res, next) => {
       user: { id: user.id, name: user.name, email: user.email },
       token,
     })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.post('/logout', authMiddleware, (req, res, next) => {
+  try {
+    // Token verified by authMiddleware; user is authenticated
+    res.json({ message: 'Logged out successfully' })
   } catch (err) {
     next(err)
   }
