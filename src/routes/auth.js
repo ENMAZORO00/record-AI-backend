@@ -1,10 +1,12 @@
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import { OAuth2Client } from 'google-auth-library'
 import { prisma } from '../config/prisma.js'
 import { sendOtpEmail, sendPasswordResetOtpEmail } from '../services/email.js'
 
 const router = Router()
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
 const SALT_ROUNDS = 10
 const OTP_EXPIRY_MS = 10 * 60 * 1000
 const OTP_LENGTH = 6
@@ -97,6 +99,58 @@ router.post('/verify-otp', async (req, res, next) => {
   }
 })
 
+router.post('/google', async (req, res, next) => {
+  try {
+    const { idToken } = req.body
+    if (!idToken?.trim()) {
+      return res.status(400).json({ error: 'Google ID token is required' })
+    }
+    const clientId = process.env.GOOGLE_CLIENT_ID
+    if (!clientId) {
+      return res.status(500).json({ error: 'Google auth not configured' })
+    }
+    const ticket = await googleClient.verifyIdToken({
+      idToken: idToken.trim(),
+      audience: clientId,
+    })
+    const payload = ticket.getPayload()
+    const googleId = payload.sub
+    const email = (payload.email || '').toLowerCase().trim()
+    const name = (payload.name || payload.email || 'User').trim()
+    if (!email) {
+      return res.status(400).json({ error: 'Google account email is required' })
+    }
+    let user = await prisma.user.findUnique({ where: { googleId } })
+    if (!user) {
+      const existing = await prisma.user.findUnique({ where: { email } })
+      if (existing) {
+        user = await prisma.user.update({
+          where: { id: existing.id },
+          data: { googleId },
+        })
+      } else {
+        user = await prisma.user.create({
+          data: { name, email, googleId },
+        })
+      }
+    }
+    const token = jwt.sign(
+      { userId: user.id },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    )
+    res.json({
+      user: { id: user.id, name: user.name, email: user.email },
+      token,
+    })
+  } catch (err) {
+    if (err.message?.includes('Token used too late') || err.message?.includes('audience')) {
+      return res.status(401).json({ error: 'Invalid Google token' })
+    }
+    next(err)
+  }
+})
+
 router.post('/login', async (req, res, next) => {
   try {
     const { email, password } = req.body
@@ -106,7 +160,7 @@ router.post('/login', async (req, res, next) => {
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase().trim() },
     })
-    if (!user) {
+    if (!user || !user.password) {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
     const valid = await bcrypt.compare(password, user.password)
@@ -138,7 +192,7 @@ router.post('/forgot-password', async (req, res, next) => {
     }
     const normalizedEmail = email.toLowerCase().trim()
     const user = await prisma.user.findUnique({ where: { email: normalizedEmail } })
-    if (!user) {
+    if (!user || !user.password) {
       return res.status(404).json({ error: 'No account found with this email' })
     }
     const otp = generateOtp()

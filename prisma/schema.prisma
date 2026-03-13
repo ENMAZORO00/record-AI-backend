@@ -11,7 +11,8 @@ model User {
   id          String        @id @default(cuid())
   name        String
   email       String        @unique
-  password    String
+  password    String?       // null for Google-only users
+  googleId    String?       @unique // Google OAuth sub
   isVerified  Boolean       @default(false)
   otp         String?
   otpExpiry   DateTime?
