@@ -2,6 +2,8 @@ import express from 'express'
 import cors from 'cors'
 import notesRouter from './routes/notes.js'
 import authRouter from './routes/auth.js'
+import companiesRouter from './routes/companies.js'
+import meetingsRouter from './routes/meetings.js'
 import transcriptsRouter from './routes/transcripts.js'
 import assistantRouter from './routes/assistant.js'
 import chatsRouter from './routes/chats.js'
@@ -18,6 +20,8 @@ app.get('/', (req, res) => {
 })
 
 app.use('/auth', authRouter)
+app.use('/companies', companiesRouter)
+app.use('/meetings', authMiddleware, meetingsRouter)
 app.use('/notes', authMiddleware, notesRouter)
 app.use('/transcripts', authMiddleware, transcriptsRouter)
 app.use('/assistant', authMiddleware, assistantRouter)

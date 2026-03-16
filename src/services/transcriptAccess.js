@@ -1,5 +1,5 @@
 /**
- * Helpers for transcript access: owned + shared with user.
+ * Helpers for transcript access: owned + shared + meeting participant.
  * Used by transcripts routes, search, and assistant chat.
  */
 
@@ -10,13 +10,13 @@ const transcriptInclude = {
 }
 
 /**
- * Get all transcripts the user can access (owned + shared).
- * Each transcript includes isOwner: boolean.
+ * Get all transcripts the user can access (owned + shared + meeting participant).
+ * Each transcript includes isOwner: boolean and optionally meetingId/participant info.
  * @param {string} userId
  * @returns {Promise<Array>}
  */
 export async function getTranscriptsForUser(userId) {
-  const [owned, sharedRows] = await Promise.all([
+  const [owned, sharedRows, meetingParticipations] = await Promise.all([
     prisma.transcript.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -30,25 +30,46 @@ export async function getTranscriptsForUser(userId) {
         },
       },
     }),
+    prisma.meetingParticipant.findMany({
+      where: { userId },
+      include: {
+        meeting: {
+          include: {
+            transcript: { include: transcriptInclude },
+          },
+        },
+      },
+    }),
   ])
 
-  const ownedMap = new Map(owned.map((t) => [t.id, { ...t, isOwner: true }]))
+  const resultMap = new Map(owned.map((t) => [t.id, { ...t, isOwner: true }]))
+
   for (const row of sharedRows) {
-    if (!ownedMap.has(row.transcript.id)) {
-      ownedMap.set(row.transcript.id, {
+    if (!resultMap.has(row.transcript.id)) {
+      resultMap.set(row.transcript.id, {
         ...row.transcript,
         isOwner: false,
       })
     }
   }
 
-  return Array.from(ownedMap.values()).sort(
+  for (const p of meetingParticipations) {
+    const t = p.meeting?.transcript
+    if (t && !resultMap.has(t.id)) {
+      resultMap.set(t.id, {
+        ...t,
+        isOwner: t.userId === userId,
+      })
+    }
+  }
+
+  return Array.from(resultMap.values()).sort(
     (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
   )
 }
 
 /**
- * Get a single transcript if user owns it or it's shared with them.
+ * Get a single transcript if user owns it, it's shared with them, or they're a meeting participant.
  * @param {string} transcriptId
  * @param {string} userId
  * @returns {Promise<{ transcript: object, isOwner: boolean } | null>}
@@ -67,6 +88,22 @@ export async function getTranscriptForUser(transcriptId, userId) {
     },
   })
   if (share) return { transcript: share.transcript, isOwner: false }
+
+  const meetingAccess = await prisma.transcript.findFirst({
+    where: {
+      id: transcriptId,
+      meetingId: { not: null },
+      meeting: {
+        participants: {
+          some: { userId },
+        },
+      },
+    },
+    include: transcriptInclude,
+  })
+  if (meetingAccess) {
+    return { transcript: meetingAccess, isOwner: meetingAccess.userId === userId }
+  }
 
   return null
 }

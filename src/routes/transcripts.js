@@ -36,8 +36,9 @@ function handleUploadError(err, req, res, next) {
 
 /**
  * POST /transcripts/upload
- * Body: multipart/form-data with field "recording" (audio file).
- * Returns: { id, recordingUrl, status: 'processing' }. Transcription runs in background.
+ * Body: multipart/form-data with field "recording" (audio file), optional "meetingId" (string).
+ * If meetingId: user must be a meeting participant and meeting must not already have a transcript.
+ * Returns: { id, recordingUrl, status: 'processing', meetingId? }. Transcription runs in background.
  */
 router.post('/upload', upload.single('recording'), handleUploadError, async (req, res, next) => {
   try {
@@ -45,6 +46,26 @@ router.post('/upload', upload.single('recording'), handleUploadError, async (req
       return res.status(400).json({ error: 'No recording file provided. Use form field "recording".' })
     }
     const userId = req.user.id
+    const meetingIdRaw = req.body?.meetingId
+    let meetingId = typeof meetingIdRaw === 'string' ? meetingIdRaw.trim() || null : null
+
+    if (meetingId) {
+      const meeting = await prisma.meeting.findUnique({
+        where: { id: meetingId },
+        include: { participants: { select: { userId: true } } },
+      })
+      if (!meeting) {
+        return res.status(404).json({ error: 'Meeting not found' })
+      }
+      const isParticipant = meeting.participants.some((p) => p.userId === userId)
+      if (!isParticipant) {
+        return res.status(403).json({ error: 'You are not a participant of this meeting' })
+      }
+      if (meeting.transcriptId) {
+        return res.status(400).json({ error: 'This meeting already has a recording' })
+      }
+    }
+
     const ext = req.file.mimetype === 'audio/wav' || req.file.mimetype === 'audio/x-wav' ? 'wav' : 'm4a'
     const blobName = `${userId}/${Date.now()}.${ext}`
 
@@ -59,8 +80,16 @@ router.post('/upload', upload.single('recording'), handleUploadError, async (req
         userId,
         recordingUrl: url,
         status: 'processing',
+        ...(meetingId ? { meetingId } : {}),
       },
     })
+
+    if (meetingId) {
+      await prisma.meeting.update({
+        where: { id: meetingId },
+        data: { transcriptId: transcript.id },
+      })
+    }
 
     // Run transcription in background (non-blocking)
     setImmediate(() => {
@@ -69,12 +98,14 @@ router.post('/upload', upload.single('recording'), handleUploadError, async (req
       })
     })
 
-    res.status(201).json({
+    const payload = {
       id: transcript.id,
       recordingUrl: transcript.recordingUrl,
       status: transcript.status,
       createdAt: transcript.createdAt,
-    })
+    }
+    if (meetingId) payload.meetingId = meetingId
+    res.status(201).json(payload)
   } catch (err) {
     next(err)
   }
@@ -252,16 +283,44 @@ router.get('/:id', async (req, res, next) => {
 
 /**
  * DELETE /transcripts/:id
- * Deletes transcript (owner only). Removes from Postgres and Azure blob.
+ * Individual transcript: owner only. Meeting transcript: company admin only.
  */
 router.delete('/:id', async (req, res, next) => {
   try {
-    const t = await prisma.transcript.findFirst({
-      where: { id: req.params.id, userId: req.user.id },
+    const transcriptId = req.params.id
+    const user = req.user
+    const t = await prisma.transcript.findUnique({
+      where: { id: transcriptId },
+      include: { meeting: { include: { company: true } } },
     })
     if (!t) return res.status(404).json({ error: 'Transcript not found' })
+
+    if (t.meetingId) {
+      // Meeting transcript: only company admin can delete
+      if (!t.meeting?.company) {
+        return res.status(404).json({ error: 'Transcript not found' })
+      }
+      const company = await prisma.company.findUnique({
+        where: { id: t.meeting.companyId },
+      })
+      if (!company || company.adminUserId !== user.id) {
+        return res.status(403).json({ error: 'Only the company admin can delete this meeting transcript' })
+      }
+    } else {
+      // Individual transcript: only owner can delete
+      if (t.userId !== user.id) {
+        return res.status(404).json({ error: 'Transcript not found' })
+      }
+    }
+
     if (t.recordingUrl) {
       await deleteRecording(t.recordingUrl)
+    }
+    if (t.meetingId) {
+      await prisma.meeting.update({
+        where: { id: t.meetingId },
+        data: { transcriptId: null },
+      })
     }
     await prisma.transcript.delete({ where: { id: t.id } })
     res.status(204).send()

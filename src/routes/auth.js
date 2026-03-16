@@ -20,6 +20,19 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
+function formatUserForResponse(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    ...(user.companyId && {
+      companyId: user.companyId,
+      companyRole: user.companyRole,
+      companyName: user.company?.name,
+    }),
+  }
+}
+
 router.post('/signup', async (req, res, next) => {
   try {
     const { name, email, password } = req.body
@@ -84,6 +97,7 @@ router.post('/verify-otp', async (req, res, next) => {
         email: email.toLowerCase().trim(),
         password: hashedPassword,
       },
+      include: { company: { select: { id: true, name: true } } },
     })
     await prisma.otp.deleteMany({ where: { email: email.toLowerCase().trim() } })
     const token = jwt.sign(
@@ -92,7 +106,7 @@ router.post('/verify-otp', async (req, res, next) => {
       { expiresIn: '7d' }
     )
     res.status(201).json({
-      user: { id: user.id, name: user.name, email: user.email },
+      user: formatUserForResponse(user),
       token,
     })
   } catch (err) {
@@ -121,17 +135,22 @@ router.post('/google', async (req, res, next) => {
     if (!email) {
       return res.status(400).json({ error: 'Google account email is required' })
     }
-    let user = await prisma.user.findUnique({ where: { googleId } })
+    let user = await prisma.user.findUnique({
+      where: { googleId },
+      include: { company: { select: { id: true, name: true } } },
+    })
     if (!user) {
       const existing = await prisma.user.findUnique({ where: { email } })
       if (existing) {
         user = await prisma.user.update({
           where: { id: existing.id },
           data: { googleId },
+          include: { company: { select: { id: true, name: true } } },
         })
       } else {
         user = await prisma.user.create({
           data: { name, email, googleId },
+          include: { company: { select: { id: true, name: true } } },
         })
       }
     }
@@ -141,7 +160,7 @@ router.post('/google', async (req, res, next) => {
       { expiresIn: '7d' }
     )
     res.json({
-      user: { id: user.id, name: user.name, email: user.email },
+      user: formatUserForResponse(user),
       token,
     })
   } catch (err) {
@@ -160,6 +179,7 @@ router.post('/login', async (req, res, next) => {
     }
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase().trim() },
+      include: { company: { select: { id: true, name: true } } },
     })
     if (!user || !user.password) {
       return res.status(401).json({ error: 'Invalid email or password' })
@@ -174,9 +194,24 @@ router.post('/login', async (req, res, next) => {
       { expiresIn: '7d' }
     )
     res.json({
-      user: { id: user.id, name: user.name, email: user.email },
+      user: formatUserForResponse(user),
       token,
     })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.get('/me', authMiddleware, async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: { company: { select: { id: true, name: true } } },
+    })
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' })
+    }
+    res.json({ user: formatUserForResponse(user) })
   } catch (err) {
     next(err)
   }

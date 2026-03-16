@@ -8,22 +8,31 @@ datasource db {
 }
 
 model User {
-  id                 String           @id @default(cuid())
-  name               String
-  email              String           @unique
-  password           String?          // null for Google-only users
-  googleId           String?          @unique // Google OAuth sub
-  isVerified         Boolean          @default(false)
-  otp                String?
-  otpExpiry          DateTime?
-  createdAt          DateTime         @default(now())
-  Information        Information[]
-  Summary            Summary[]
-  Task               Task[]
-  Transcript         Transcript[]
-  Note               Note[]
-  Chat               Chat[]
-  TranscriptShares   TranscriptShare[] @relation("SharedWithMe")
+  id                     String                 @id @default(cuid())
+  name                   String
+  email                  String                 @unique
+  password               String?                // null for Google-only users
+  googleId               String?                @unique // Google OAuth sub
+  isVerified             Boolean                @default(false)
+  otp                    String?
+  otpExpiry              DateTime?
+  companyId              String?                // null = individual user
+  companyRole            String?                // 'admin' | 'employee' when companyId is set
+  createdAt              DateTime               @default(now())
+  Information            Information[]
+  Summary                Summary[]
+  Task                   Task[]
+  Transcript             Transcript[]
+  Note                   Note[]
+  Chat                   Chat[]
+  TranscriptShares       TranscriptShare[]     @relation("SharedWithMe")
+  company                Company?               @relation("CompanyMember", fields: [companyId], references: [id], onDelete: SetNull)
+  companyAdmin           Company?              @relation("CompanyAdmin")
+  meetingsCreated        Meeting[]              @relation("MeetingCreator")
+  meetingParticipations  MeetingParticipant[]
+  companyInvitesSent     CompanyInvite[]        @relation("InvitedBy")
+
+  @@index([companyId])
 }
 
 model Chat {
@@ -116,17 +125,20 @@ model Task {
 }
 
 model Transcript {
-  id           String           @id @default(cuid())
+  id           String            @id @default(cuid())
   recordingUrl String?
-  status       String           @default("processing") // processing | completed | failed
+  status       String            @default("processing") // processing | completed | failed
   userId       String
-  createdAt    DateTime         @default(now())
+  meetingId    String?           @unique
+  createdAt    DateTime          @default(now())
   Conversation Conversation[]
-  User         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  User         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   Shares       TranscriptShare[]
+  meeting      Meeting?          @relation(fields: [meetingId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([createdAt])
+  @@index([meetingId])
 }
 
 model TranscriptShare {
@@ -140,4 +152,62 @@ model TranscriptShare {
   @@unique([transcriptId, sharedWithId])
   @@index([sharedWithId])
   @@index([transcriptId])
+}
+
+model Company {
+  id          String         @id @default(cuid())
+  name        String
+  adminUserId String         @unique
+  createdAt   DateTime       @default(now())
+  admin       User           @relation("CompanyAdmin", fields: [adminUserId], references: [id], onDelete: Cascade)
+  members     User[]         @relation("CompanyMember")
+  meetings    Meeting[]
+  invites     CompanyInvite[]
+
+  @@index([adminUserId])
+}
+
+model CompanyInvite {
+  id          String   @id @default(cuid())
+  companyId   String
+  email       String
+  invitedById String
+  token       String   @unique
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invitedBy   User      @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([email])
+  @@index([token])
+}
+
+model Meeting {
+  id           String     @id @default(cuid())
+  companyId    String
+  createdById  String
+  transcriptId String?    @unique
+  createdAt    DateTime   @default(now())
+  company      Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy    User       @relation("MeetingCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  transcript   Transcript?
+  participants MeetingParticipant[]
+
+  @@index([companyId])
+  @@index([createdById])
+  @@index([transcriptId])
+}
+
+model MeetingParticipant {
+  id        String   @id @default(cuid())
+  meetingId String
+  userId    String
+  createdAt DateTime @default(now())
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@index([meetingId])
+  @@index([userId])
 }
