@@ -12,10 +12,10 @@ export async function sendOtpEmail(to, otp) {
   const mailOptions = {
     from: process.env.GMAIL_USER,
     to,
-    subject: "Verify your email - Notes AI",
+    subject: "Verify your email - Shoten AI",
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #0a0a0f; color: #e2e8f0; border-radius: 12px;">
-        <h2 style="margin: 0 0 16px; font-size: 24px; font-weight: 700; color: #ffffff;">Notes AI</h2>
+        <h2 style="margin: 0 0 16px; font-size: 24px; font-weight: 700; color: #ffffff;">Shoten AI</h2>
         <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.6; color: #94a3b8;">
           Use the code below to verify your email address:
         </p>
@@ -35,10 +35,10 @@ export async function sendPasswordResetOtpEmail(to, otp) {
   const mailOptions = {
     from: process.env.GMAIL_USER,
     to,
-    subject: "Reset your password - Notes AI",
+    subject: "Reset your password - Shoten AI",
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #0a0a0f; color: #e2e8f0; border-radius: 12px;">
-        <h2 style="margin: 0 0 16px; font-size: 24px; font-weight: 700; color: #ffffff;">Notes AI</h2>
+        <h2 style="margin: 0 0 16px; font-size: 24px; font-weight: 700; color: #ffffff;">Shoten AI</h2>
         <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.6; color: #94a3b8;">
           Use the code below to reset your password:
         </p>
@@ -61,8 +61,8 @@ export async function sendPasswordResetOtpEmail(to, otp) {
  * @param {string} sharerEmail - Email of person who shared
  */
 export async function sendTranscriptShareEmail(to, sharerName, sharerEmail) {
-  const appName = 'Record AI'
-  const subject = `${sharerName} shared a transcript with you – ${appName}`
+  const appName = "Record AI";
+  const subject = `${sharerName} shared a transcript with you – ${appName}`;
 
   const html = `
 <!DOCTYPE html>
@@ -95,7 +95,7 @@ export async function sendTranscriptShareEmail(to, sharerName, sharerEmail) {
               <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0;">
                 <tr>
                   <td style="border-radius: 8px; background: linear-gradient(135deg, #5810fa 0%, #8b5cf6 100%);">
-                    <a href="${process.env.APP_URL || '#'}" style="display: inline-block; padding: 14px 28px; font-size: 15px; font-weight: 600; color: #ffffff; text-decoration: none;">Open in ${appName}</a>
+                    <a href="${process.env.APP_URL || "#"}" style="display: inline-block; padding: 14px 28px; font-size: 15px; font-weight: 600; color: #ffffff; text-decoration: none;">Open in ${appName}</a>
                   </td>
                 </tr>
               </table>
@@ -114,18 +114,18 @@ export async function sendTranscriptShareEmail(to, sharerName, sharerEmail) {
   </table>
 </body>
 </html>
-  `.trim()
+  `.trim();
 
   const mailOptions = {
     from: process.env.GMAIL_USER,
     to,
     subject,
     html,
-  }
-  await transporter.sendMail(mailOptions)
+  };
+  await transporter.sendMail(mailOptions);
 }
 
-const APP_NAME = 'Record AI'
+const APP_NAME = "Record AI";
 
 /**
  * Send email when a company admin invites someone to join the company.
@@ -134,14 +134,23 @@ const APP_NAME = 'Record AI'
  * @param {string} inviterName - Admin name
  * @param {string} inviteToken - Token for join link
  */
-export async function sendCompanyInviteEmail(to, companyName, inviterName, inviteToken) {
-  const appUrl = (process.env.APP_URL || 'https://example.com').replace(/\/$/, '')
+export async function sendCompanyInviteEmail(
+  to,
+  companyName,
+  inviterName,
+  inviteToken,
+) {
+  const appUrl = (process.env.APP_URL || "https://example.com").replace(
+    /\/$/,
+    "",
+  );
   // If APP_URL is a deep link (e.g. notes://join), use it as-is with ?invite=; otherwise add /join
-  const isDeepLink = /^[a-z][a-z0-9+.-]*:\/\//i.test(appUrl) && !appUrl.startsWith('http')
+  const isDeepLink =
+    /^[a-z][a-z0-9+.-]*:\/\//i.test(appUrl) && !appUrl.startsWith("http");
   const joinUrl = isDeepLink
     ? `${appUrl}?invite=${encodeURIComponent(inviteToken)}`
-    : `${appUrl}/join?invite=${encodeURIComponent(inviteToken)}`
-  const subject = `You're invited to join ${companyName} on ${APP_NAME}`
+    : `${appUrl}/join?invite=${encodeURIComponent(inviteToken)}`;
+  const subject = `You're invited to join ${companyName} on ${APP_NAME}`;
 
   const html = `
 <!DOCTYPE html>
@@ -192,10 +201,10 @@ export async function sendCompanyInviteEmail(to, companyName, inviterName, invit
   </table>
 </body>
 </html>
-  `.trim()
+  `.trim();
 
-  const mailOptions = { from: process.env.GMAIL_USER, to, subject, html }
-  await transporter.sendMail(mailOptions)
+  const mailOptions = { from: process.env.GMAIL_USER, to, subject, html };
+  await transporter.sendMail(mailOptions);
 }
 
 /**
@@ -206,8 +215,14 @@ export async function sendCompanyInviteEmail(to, companyName, inviterName, invit
  * @param {string} loginEmail - Same as to, for display
  * @param {string} plainPassword - Default password (plain text, shown in email)
  */
-export async function sendEmployeeCredentialsEmail(to, companyName, inviterName, loginEmail, plainPassword) {
-  const subject = `Your ${APP_NAME} login for ${companyName}`
+export async function sendEmployeeCredentialsEmail(
+  to,
+  companyName,
+  inviterName,
+  loginEmail,
+  plainPassword,
+) {
+  const subject = `Your ${APP_NAME} login for ${companyName}`;
 
   const html = `
 <!DOCTYPE html>
@@ -252,8 +267,8 @@ export async function sendEmployeeCredentialsEmail(to, companyName, inviterName,
   </table>
 </body>
 </html>
-  `.trim()
+  `.trim();
 
-  const mailOptions = { from: process.env.GMAIL_USER, to, subject, html }
-  await transporter.sendMail(mailOptions)
+  const mailOptions = { from: process.env.GMAIL_USER, to, subject, html };
+  await transporter.sendMail(mailOptions);
 }

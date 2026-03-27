@@ -10,3 +10,7 @@ When you add an employee (via the app), the backend:
 4. Sends them an **email with their login credentials**: email and password.
 
 **What the employee does:** Open the Record AI app, tap Sign in, and use the **email and password** from that email. They can change their password after first login if you add that flow.
+
+
+# generate apk
+eas build --profile preview --platform android
