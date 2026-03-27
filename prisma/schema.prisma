@@ -157,6 +157,7 @@ model TranscriptShare {
 model Company {
   id          String         @id @default(cuid())
   name        String
+  verified    Boolean        @default(false)
   adminUserId String         @unique
   createdAt   DateTime       @default(now())
   admin       User           @relation("CompanyAdmin", fields: [adminUserId], references: [id], onDelete: Cascade)
