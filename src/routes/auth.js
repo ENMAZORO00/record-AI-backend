@@ -29,6 +29,7 @@ function formatUserForResponse(user) {
       companyId: user.companyId,
       companyRole: user.companyRole,
       companyName: user.company?.name,
+      companyVerified: user.company?.verified === true,
     }),
   }
 }
@@ -97,7 +98,7 @@ router.post('/verify-otp', async (req, res, next) => {
         email: email.toLowerCase().trim(),
         password: hashedPassword,
       },
-      include: { company: { select: { id: true, name: true } } },
+      include: { company: { select: { id: true, name: true, verified: true } } },
     })
     await prisma.otp.deleteMany({ where: { email: email.toLowerCase().trim() } })
     const token = jwt.sign(
@@ -137,7 +138,7 @@ router.post('/google', async (req, res, next) => {
     }
     let user = await prisma.user.findUnique({
       where: { googleId },
-      include: { company: { select: { id: true, name: true } } },
+      include: { company: { select: { id: true, name: true, verified: true } } },
     })
     if (!user) {
       const existing = await prisma.user.findUnique({ where: { email } })
@@ -145,14 +146,21 @@ router.post('/google', async (req, res, next) => {
         user = await prisma.user.update({
           where: { id: existing.id },
           data: { googleId },
-          include: { company: { select: { id: true, name: true } } },
+          include: { company: { select: { id: true, name: true, verified: true } } },
         })
       } else {
         user = await prisma.user.create({
           data: { name, email, googleId },
-          include: { company: { select: { id: true, name: true } } },
+          include: { company: { select: { id: true, name: true, verified: true } } },
         })
       }
+    }
+    if (user.companyId && user.company && !user.company.verified) {
+      return res.status(403).json({
+        error:
+          'Your company account is pending verification. You can sign in once an administrator has approved your company.',
+        code: 'COMPANY_PENDING_VERIFICATION',
+      })
     }
     const token = jwt.sign(
       { userId: user.id },
@@ -179,7 +187,7 @@ router.post('/login', async (req, res, next) => {
     }
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase().trim() },
-      include: { company: { select: { id: true, name: true } } },
+      include: { company: { select: { id: true, name: true, verified: true } } },
     })
     if (!user || !user.password) {
       return res.status(401).json({ error: 'Invalid email or password' })
@@ -187,6 +195,13 @@ router.post('/login', async (req, res, next) => {
     const valid = await bcrypt.compare(password, user.password)
     if (!valid) {
       return res.status(401).json({ error: 'Invalid email or password' })
+    }
+    if (user.companyId && user.company && !user.company.verified) {
+      return res.status(403).json({
+        error:
+          'Your company account is pending verification. You can sign in once an administrator has approved your company.',
+        code: 'COMPANY_PENDING_VERIFICATION',
+      })
     }
     const token = jwt.sign(
       { userId: user.id },
@@ -206,7 +221,7 @@ router.get('/me', authMiddleware, async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      include: { company: { select: { id: true, name: true } } },
+      include: { company: { select: { id: true, name: true, verified: true } } },
     })
     if (!user) {
       return res.status(401).json({ error: 'User not found' })

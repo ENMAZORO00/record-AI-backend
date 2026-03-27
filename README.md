@@ -14,3 +14,8 @@ When you add an employee (via the app), the backend:
 
 # generate apk
 eas build --profile preview --platform android
+
+
+#running database migration from dev to prod
+first in .env file have database_url=dev and run      npx prisma migrate deploy
+after dev migration is done replace database_url to prod and run:      npx prisma migrate deploy

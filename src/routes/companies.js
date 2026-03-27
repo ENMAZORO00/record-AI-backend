@@ -76,6 +76,7 @@ router.post('/', async (req, res, next) => {
       data: {
         name,
         adminUserId: user.id,
+        verified: false,
       },
     })
     await prisma.user.update({
@@ -85,11 +86,11 @@ router.post('/', async (req, res, next) => {
 
     const updatedUser = await prisma.user.findUnique({
       where: { id: user.id },
-      include: { company: { select: { id: true, name: true } } },
+      include: { company: { select: { id: true, name: true, verified: true } } },
     })
 
     res.status(201).json({
-      company: { id: company.id, name: company.name },
+      company: { id: company.id, name: company.name, verified: company.verified },
       user: {
         id: updatedUser.id,
         name: updatedUser.name,
@@ -97,6 +98,7 @@ router.post('/', async (req, res, next) => {
         companyId: updatedUser.companyId,
         companyRole: updatedUser.companyRole,
         companyName: updatedUser.company?.name,
+        companyVerified: updatedUser.company?.verified === true,
       },
     })
   } catch (err) {
@@ -116,13 +118,13 @@ router.get('/me', async (req, res, next) => {
     }
     const company = await prisma.company.findUnique({
       where: { id: user.companyId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, verified: true },
     })
     if (!company) {
       return res.status(404).json({ error: 'Company not found' })
     }
     res.json({
-      company: { id: company.id, name: company.name },
+      company: { id: company.id, name: company.name, verified: company.verified },
       companyRole: user.companyRole,
     })
   } catch (err) {
@@ -274,12 +276,16 @@ router.post('/join', async (req, res, next) => {
 
     const updatedUser = await prisma.user.findUnique({
       where: { id: user.id },
-      include: { company: { select: { id: true, name: true } } },
+      include: { company: { select: { id: true, name: true, verified: true } } },
     })
 
     res.json({
       message: 'Joined company successfully',
-      company: { id: invite.company.id, name: invite.company.name },
+      company: {
+        id: invite.company.id,
+        name: invite.company.name,
+        verified: updatedUser.company?.verified === true,
+      },
       user: {
         id: updatedUser.id,
         name: updatedUser.name,
@@ -287,6 +293,7 @@ router.post('/join', async (req, res, next) => {
         companyId: updatedUser.companyId,
         companyRole: updatedUser.companyRole,
         companyName: updatedUser.company?.name,
+        companyVerified: updatedUser.company?.verified === true,
       },
     })
   } catch (err) {
