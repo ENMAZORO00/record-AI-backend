@@ -1,7 +1,7 @@
 /**
  * Background job: take a Transcript (with recordingUrl, status processing),
  * run transcription (Azure or Whisper per TRANSCRIPTION_PROVIDER), then save Conversation rows.
- * After completion, triggers async notes generation (1–3 helpful notes per transcript).
+ * After completion, triggers async notes generation (one structured note per transcript).
  */
 import { prisma } from '../config/prisma.js'
 import { getPhrasesFromRecording } from './transcriptionProvider.js'
@@ -39,7 +39,7 @@ export async function runTranscriptionJob(transcriptId) {
       data: { status: 'completed' },
     })
 
-    // Generate 1–3 helpful notes asynchronously (non-blocking)
+    // Generate one structured note asynchronously (non-blocking)
     setImmediate(() => {
       runNotesGenerationJob(transcriptId).catch((err) => {
         console.error('Notes generation failed for transcript', transcriptId, err)
