@@ -1,6 +1,6 @@
 /**
- * Generate 1–3 helpful, concise notes from a completed transcript using Groq LLM.
- * Runs async; does not block transcription or other APIs.
+ * Generate one structured note from a completed transcript (title + bullet points) via Groq LLM.
+ * Replaces any existing Information row for the same transcript. Runs async.
  *
  * Env: GROQ_API_KEY
  */
@@ -9,15 +9,43 @@ import { prisma } from '../config/prisma.js'
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const CHAT_MODEL = 'llama-3.1-8b-instant'
 
-/** Max transcript chars to send to LLM */
 const MAX_TRANSCRIPT_CHARS = 6000
+const MAX_TITLE_CHARS = 120
+const MAX_BULLET_CHARS = 600
+const MAX_BULLETS = 25
 
 /**
- * Extract 1–3 helpful notes from transcript text via LLM.
- * @param {string} transcriptText - Full conversation text (e.g. "Speaker 1: ... Speaker 2: ...")
- * @returns {Promise<string[]>} 1–3 short note strings
+ * @param {unknown} parsed
+ * @returns {{ title: string, bullets: string[], text: string } | null}
  */
-async function extractNotesWithLLM(transcriptText) {
+function normalizeStructuredNote(parsed) {
+  if (!parsed || typeof parsed !== 'object') return null
+  let title =
+    typeof parsed.title === 'string' ? parsed.title.trim().slice(0, MAX_TITLE_CHARS) : ''
+  const raw = Array.isArray(parsed.bullets) ? parsed.bullets : []
+  const bullets = raw
+    .filter((b) => typeof b === 'string')
+    .map((b) => b.trim())
+    .filter(Boolean)
+    .map((b) => b.slice(0, MAX_BULLET_CHARS))
+    .slice(0, MAX_BULLETS)
+  if (bullets.length === 0) return null
+  if (!title) {
+    const first = bullets[0]
+    title =
+      first.length <= MAX_TITLE_CHARS
+        ? first
+        : `${first.slice(0, MAX_TITLE_CHARS - 1)}…`
+  }
+  const text = bullets.join('\n\n')
+  return { title, bullets, text }
+}
+
+/**
+ * @param {string} transcriptText
+ * @returns {Promise<{ title: string, bullets: string[], text: string } | null>}
+ */
+async function extractStructuredNoteWithLLM(transcriptText) {
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) throw new Error('GROQ_API_KEY is not set')
 
@@ -26,17 +54,16 @@ async function extractNotesWithLLM(transcriptText) {
       ? transcriptText.slice(0, MAX_TRANSCRIPT_CHARS) + '\n...[truncated]'
       : transcriptText
 
-  const systemPrompt = `You extract brief, helpful notes from conversation transcripts. Return ONLY a JSON object with this exact format:
-{"notes": ["note1", "note2", "note3"]}
+  const systemPrompt = `You summarize conversation transcripts into one structured note. Return ONLY a JSON object with this exact shape:
+{"title": "short heading for the note", "bullets": ["point 1", "point 2", ...]}
 
 Rules:
-- Extract 1–3 notes (minimum 1, maximum 3). If only one useful point exists, return just one.
-- Each note must be a short, standalone piece of information (1–2 sentences max). No long paragraphs.
-- Include only information a user would find helpful: decisions, commitments, deadlines, tasks, key facts, important names/dates, follow-ups, action items.
-- Skip: greetings, small talk, filler, redundant or generic statements.
-- Each note must be concise and actionable.`
+- title: one line, max ~8 words, captures the meeting or main topic (no trailing punctuation clutter).
+- bullets: 4–12 items when the transcript has enough substance; use fewer if the conversation is thin. Each bullet is one clear statement (decisions, commitments, deadlines, tasks, key facts, names/dates, follow-ups). No duplicate ideas.
+- Skip greetings, small talk, filler, and generic statements.
+- Use plain text only inside strings (no markdown, no nested JSON).`
 
-  const userPrompt = `Extract helpful notes from this transcript:\n\n${truncated}`
+  const userPrompt = `Summarize this transcript:\n\n${truncated}`
 
   const res = await fetch(GROQ_CHAT_URL, {
     method: 'POST',
@@ -51,7 +78,7 @@ Rules:
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.2,
-      max_tokens: 512,
+      max_tokens: 2048,
     }),
   })
 
@@ -62,9 +89,8 @@ Rules:
 
   const data = await res.json()
   const content = data?.choices?.[0]?.message?.content?.trim()
-  if (!content) return []
+  if (!content) return null
 
-  // Parse JSON from response (handle markdown code blocks if present)
   let jsonStr = content
   const match = content.match(/```(?:json)?\s*([\s\S]*?)```/)
   if (match) jsonStr = match[1].trim()
@@ -73,19 +99,14 @@ Rules:
   try {
     parsed = JSON.parse(jsonStr)
   } catch {
-    return []
+    return null
   }
 
-  const notes = Array.isArray(parsed.notes) ? parsed.notes : []
-  return notes
-    .filter((n) => typeof n === 'string' && n.trim().length > 0)
-    .map((n) => n.trim().slice(0, 500))
-    .slice(0, 3)
+  return normalizeStructuredNote(parsed)
 }
 
 /**
- * Run notes generation for a completed transcript. Creates Information rows.
- * Called asynchronously; does not block.
+ * Run notes generation for a completed transcript. Creates or replaces one Information row.
  * @param {string} transcriptId
  */
 export async function runNotesGenerationJob(transcriptId) {
@@ -103,13 +124,19 @@ export async function runNotesGenerationJob(transcriptId) {
 
   if (!transcriptText.trim()) return
 
-  const notes = await extractNotesWithLLM(transcriptText)
-  if (notes.length === 0) return
+  const structured = await extractStructuredNoteWithLLM(transcriptText)
+  if (!structured) return
 
-  await prisma.information.createMany({
-    data: notes.map((text) => ({
-      text,
-      userId: transcript.userId,
-    })),
-  })
+  await prisma.$transaction([
+    prisma.information.deleteMany({ where: { transcriptId } }),
+    prisma.information.create({
+      data: {
+        title: structured.title,
+        text: structured.text,
+        bullets: structured.bullets,
+        transcriptId,
+        userId: transcript.userId,
+      },
+    }),
+  ])
 }
