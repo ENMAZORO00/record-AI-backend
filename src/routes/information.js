@@ -3,6 +3,18 @@ import { prisma } from '../config/prisma.js'
 
 const router = Router()
 
+function normalizeBulletsInput(body) {
+  const { bullets } = body
+  if (!Array.isArray(bullets) || bullets.length === 0) return null
+  const cleaned = bullets
+    .filter((b) => typeof b === 'string')
+    .map((b) => b.trim())
+    .filter(Boolean)
+    .map((b) => b.slice(0, 2000))
+    .slice(0, 50)
+  return cleaned.length ? cleaned : null
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const items = await prisma.information.findMany({
@@ -17,13 +29,30 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    const { text } = req.body
-    const trimmed = typeof text === 'string' ? text.trim() : ''
-    if (!trimmed) {
+    const titleRaw = req.body?.title
+    const title =
+      typeof titleRaw === 'string' && titleRaw.trim()
+        ? titleRaw.trim().slice(0, 200)
+        : null
+
+    const fromBullets = normalizeBulletsInput(req.body)
+    let text = typeof req.body?.text === 'string' ? req.body.text.trim() : ''
+
+    if (fromBullets) {
+      if (!text) text = fromBullets.join('\n\n')
+    }
+
+    if (!text) {
       return res.status(400).json({ error: 'Text is required' })
     }
+
     const item = await prisma.information.create({
-      data: { text: trimmed, userId: req.user.id },
+      data: {
+        title,
+        text,
+        bullets: fromBullets,
+        userId: req.user.id,
+      },
     })
     res.status(201).json(item)
   } catch (err) {
