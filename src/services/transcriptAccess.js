@@ -4,9 +4,18 @@
  */
 
 import { prisma } from '../config/prisma.js'
+import { getFreshRecordingReadUrl } from './azureStorage.js'
 
 const transcriptInclude = {
   Conversation: { orderBy: { id: 'asc' } },
+}
+
+function withFreshRecordingUrl(transcript) {
+  if (!transcript) return transcript
+  return {
+    ...transcript,
+    recordingUrl: getFreshRecordingReadUrl(transcript.recordingUrl),
+  }
 }
 
 /**
@@ -63,7 +72,8 @@ export async function getTranscriptsForUser(userId) {
     }
   }
 
-  return Array.from(resultMap.values()).sort(
+  const enriched = Array.from(resultMap.values()).map(withFreshRecordingUrl)
+  return enriched.sort(
     (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
   )
 }
@@ -79,7 +89,7 @@ export async function getTranscriptForUser(transcriptId, userId) {
     where: { id: transcriptId, userId },
     include: transcriptInclude,
   })
-  if (owned) return { transcript: owned, isOwner: true }
+  if (owned) return { transcript: withFreshRecordingUrl(owned), isOwner: true }
 
   const share = await prisma.transcriptShare.findFirst({
     where: { transcriptId, sharedWithId: userId },
@@ -87,7 +97,7 @@ export async function getTranscriptForUser(transcriptId, userId) {
       transcript: { include: transcriptInclude },
     },
   })
-  if (share) return { transcript: share.transcript, isOwner: false }
+  if (share) return { transcript: withFreshRecordingUrl(share.transcript), isOwner: false }
 
   const meetingAccess = await prisma.transcript.findFirst({
     where: {
@@ -102,7 +112,10 @@ export async function getTranscriptForUser(transcriptId, userId) {
     include: transcriptInclude,
   })
   if (meetingAccess) {
-    return { transcript: meetingAccess, isOwner: meetingAccess.userId === userId }
+    return {
+      transcript: withFreshRecordingUrl(meetingAccess),
+      isOwner: meetingAccess.userId === userId,
+    }
   }
 
   return null
