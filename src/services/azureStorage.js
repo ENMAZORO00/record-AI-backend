@@ -100,6 +100,44 @@ export async function uploadRecording(buffer, blobName, contentType = 'audio/mpe
 }
 
 /**
+ * Generate a fresh read URL for an existing recording blob.
+ * Accepts a stored URL with or without an expired SAS query.
+ * @param {string | null | undefined} recordingUrl
+ * @returns {string | null}
+ */
+export function getFreshRecordingReadUrl(recordingUrl) {
+  if (!recordingUrl || typeof recordingUrl !== 'string') return null
+  try {
+    const parsed = new URL(recordingUrl)
+    const pathParts = parsed.pathname.split('/').filter(Boolean)
+    // pathname is like /containerName/userId/timestamp.ext
+    if (pathParts.length < 2) return recordingUrl
+    const blobName = pathParts.slice(1).join('/')
+    const baseBlobUrl = `${parsed.origin}/${containerName}/${blobName}`
+
+    const cred = getSharedKeyCredential()
+    if (!cred) return baseBlobUrl
+
+    // Small negative skew prevents "not yet valid" time drift issues.
+    const startsOn = new Date(Date.now() - 5 * 60 * 1000)
+    const expiresOn = new Date(Date.now() + SAS_VALID_DAYS * 24 * 60 * 60 * 1000)
+    const sasParams = generateBlobSASQueryParameters(
+      {
+        containerName,
+        blobName,
+        permissions: BlobSASPermissions.parse('r'),
+        startsOn,
+        expiresOn,
+      },
+      cred
+    )
+    return `${baseBlobUrl}?${sasParams.toString()}`
+  } catch {
+    return recordingUrl
+  }
+}
+
+/**
  * Delete a recording blob from Azure Storage.
  * @param {string} recordingUrl - Full blob URL (with or without SAS)
  * @returns {Promise<void>}
